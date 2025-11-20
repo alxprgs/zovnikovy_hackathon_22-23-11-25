@@ -15,21 +15,22 @@ from asfeslib.weather.client import WeatherApiClient
 MongoDB = MongoConnectScheme(db_url=mongodb_settings.URL)
 Weather = WeatherApiClient(api_key=settings.WEATHER_API_KEY, lang="ru")
 
-cfg = MailConfig(
-    host=mail_settings.MAIL_SERVER_SMTP,
-    port=mail_settings.MAIL_PORT_SMTP,
-    username=mail_settings.MAIL_USERNAME,
-    password=mail_settings.MAIL_PASSWORD,
-    from_name="ASFES Mailer",
-    retry_count=3,
-    retry_delay=1.0,
-    rate_limit=0.0,
-)
+def create_mail_config() -> MailConfig:
+    return MailConfig(
+        host=mail_settings.MAIL_SERVER_SMTP,
+        port=mail_settings.MAIL_PORT_SMTP,
+        username=mail_settings.MAIL_USERNAME or "noreply@asfes.ru",
+        password=mail_settings.MAIL_PASSWORD or "testpass123",
+        from_name="ASFES Mailer",
+        retry_count=3,
+        retry_delay=1.0,
+        rate_limit=0.0,
+    )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.mailcfg = cfg
+    app.state.mailcfg = create_mail_config()
     app.state.weatherclient = Weather
 
     client, db, status = await connect_mongo(MongoDB)
