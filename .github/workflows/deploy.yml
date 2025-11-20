@@ -79,18 +79,18 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
-
+          request_pty: true 
           script: |
             set -e
 
-            echo "Updating packages"
+            echo "Updating system packages"
             sudo apt-get update -y
             sudo apt-get install -y docker-compose-plugin
 
             echo "Switching to project directory"
             cd /srv/hackathon
 
-            echo "Pulling latest image"
+            echo "Pulling image from GHCR"
             docker compose pull
 
             echo "Stopping old containers"
@@ -99,12 +99,12 @@ jobs:
             echo "Starting containers"
             docker compose up -d
 
-            echo "Waiting 8 seconds for container to start"
-            sleep 8
+            echo "Waiting 5 seconds for startup"
+            sleep 5
 
             echo "Checking service health"
             if ! docker ps | grep -q "hackathon-api"; then
-              echo "Deployment failed — container not running"
+              echo "ERROR: hackathon-api container is NOT running"
               exit 1
             fi
 
