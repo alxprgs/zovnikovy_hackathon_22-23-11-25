@@ -82,14 +82,15 @@ jobs:
           script: |
             set -e
 
+            echo "SERVER_USER = '${{ secrets.SERVER_USER }}'"
+
             whoami
             id
             pwd
             ls -la /home
 
-            echo "Updating system packages"
-            sudo apt-get update -y
-            sudo apt-get install -y docker-compose-plugin
+            sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-compose-plugin
 
             echo "Switching to project directory"
             cd /srv/hackathon
@@ -109,8 +110,8 @@ jobs:
             echo "Checking service health"
             if ! sudo docker ps | grep -q "hackathon-api"; then
               echo "ERROR: hackathon-api container is NOT running"
+              sudo docker ps
               exit 1
             fi
 
             echo "Deployment completed successfully"
-
