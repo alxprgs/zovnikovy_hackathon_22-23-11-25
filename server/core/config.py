@@ -32,10 +32,10 @@ settings: Final = Settings()
 
 class MailSettings(BaseSettings):
     MAIL_USERNAME: EmailStr = Field(
-        default_factory=lambda: f"noreply@{settings.DOMAIN_WITHOUT_WWW}"
+        default_factory=lambda: f"hackathon@{settings.DOMAIN_WITHOUT_WWW}"
     )
     MAIL_FROM: EmailStr = Field(
-        default_factory=lambda: f"noreply@{settings.DOMAIN_WITHOUT_WWW}"
+        default_factory=lambda: f"hackathon@{settings.DOMAIN_WITHOUT_WWW}"
     )
 
     MAIL_PORT_IMAP: int = Field(993, ge=1, le=65535)

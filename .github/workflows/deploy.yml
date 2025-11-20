@@ -19,6 +19,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Create test .env
+        run: |
+          cat <<EOF > .env
+          WEATHER_API_KEY=${{ secrets.WEATHER_API_KEY }}
+          MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}
+
+          POSTGRES_URL=${{ secrets.POSTGRES_URL }}
+          MONGO_URL=${{ secrets.MONGO_URL }}
+          MYSQL_URL=${{ secrets.MYSQL_URL }}
+          MAIL_USERNAME=${{ secrets.MAIL_USERNAME  }}
+          EOF
+
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-dev.txt
 
