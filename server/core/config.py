@@ -40,9 +40,10 @@ class MailSettings(BaseSettings):
     MAIL_SERVER_SMTP: str | None = None
 
     MAIL_SSL: bool = Field(True)
-    MAIL_PASSWORD: str = Field(..., min_length=6)
+    MAIL_PASSWORD: str | None = Field(None, min_length=6)
 
     model_config = SettingsConfigDict(
+        env_prefix="MAIL_",
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
@@ -66,6 +67,7 @@ class MailSettings(BaseSettings):
             self.MAIL_SERVER_SMTP = f"mail.{base_domain}"
 
         return self
+
 
 class DatabaseConfig(BaseSettings):
     URL: Optional[AnyUrl] = None

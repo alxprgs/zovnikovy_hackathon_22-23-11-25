@@ -30,6 +30,14 @@ jobs:
           MYSQL_URL=${{ secrets.MYSQL_URL }}
           MAIL_USERNAME=${{ secrets.MAIL_USERNAME  }}
           EOF
+      - name: Export test environment variables
+        run: |
+          echo "WEATHER_API_KEY=${{ secrets.WEATHER_API_KEY }}" >> $GITHUB_ENV
+          echo "MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}" >> $GITHUB_ENV
+          echo "MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}" >> $GITHUB_ENV
+          echo "POSTGRES_URL=${{ secrets.POSTGRES_URL }}" >> $GITHUB_ENV
+          echo "MONGO_URL=${{ secrets.MONGO_URL }}" >> $GITHUB_ENV
+          echo "MYSQL_URL=${{ secrets.MYSQL_URL }}" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-dev.txt
