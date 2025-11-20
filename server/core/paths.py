@@ -31,7 +31,7 @@ def _mkdir(path: Path) -> Path:
         ) from exc
     return path
 
-_WRITABLE_SUBDIRS: Final[List[str]] = ["certs", "p12", "ca", "docs", "db", "logs"]
+_WRITABLE_SUBDIRS: Final[List[str]] = ["db", "logs"]
 for _sub in _WRITABLE_SUBDIRS:
     _mkdir(DATA_ROOT / _sub)
 
