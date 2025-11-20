@@ -65,10 +65,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker image
-        run: docker build -t ghcr.io/alxprgs/zovnikovy_hackathon_22-23-11-25:latest .
+        run: |
+          docker build -t ghcr.io/alxprgs/zovnikovy_hackathon_22-23-11-25:latest .
 
       - name: Push Docker image
-        run: docker push ghcr.io/alxprgs/zovnikovy_hackathon_22-23-11-25:latest
+        run: |
+          docker push ghcr.io/alxprgs/zovnikovy_hackathon_22-23-11-25:latest
 
       - name: Deploy on server
         uses: appleboy/ssh-action@v1.0.3
@@ -79,46 +81,29 @@ jobs:
           port: ${{ secrets.SERVER_PORT }}
           script: |
             set -e
-            
-            cd /srv/hackathon
 
             sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-compose-plugin
 
+            echo "Switching to project directory"
+            cd /srv/hackathon
+
+            echo "Pulling image from GHCR"
             sudo docker compose pull
+
+            echo "Stopping old containers"
             sudo docker compose down --remove-orphans
+
+            echo "Starting containers"
             sudo docker compose up -d
 
+            echo "Waiting 5 seconds for startup"
             sleep 5
 
-            SUCCESS=0
-            for i in {1..10}; do
-              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9105/health || true)
-
-              if [ "$STATUS" = "200" ]; then
-                SUCCESS=1
-                break
-              fi
-
-              sleep 3
-            done
-
-            if [ "$SUCCESS" != "1" ]; then
-              sudo docker compose down
-
-              PREV=$(sudo docker images --format "{{.Repository}}:{{.Tag}}" \
-                | grep "zovnikovy_hackathon_22-23-11-25" \
-                | sed -n '2p')
-
-              if [ -z "$PREV" ]; then
-                echo "Rollback failed: no previous image found"
-                exit 1
-              fi
-
-              sudo docker tag "$PREV" ghcr.io/alxprgs/zovnikovy_hackathon_22-23-11-25:latest
-              sudo docker compose up -d
-
-              echo "Rollback completed"
+            echo "Checking service health"
+            if ! sudo docker ps | grep -q "hackathon-api"; then
+              echo "ERROR: hackathon-api container is NOT running"
+              sudo docker ps
               exit 1
             fi
 
