@@ -25,12 +25,12 @@ jobs:
           cat <<EOF > .env
           WEATHER_API_KEY=${{ secrets.WEATHER_API_KEY }}
           MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}
-
           POSTGRES_URL=${{ secrets.POSTGRES_URL }}
           MONGO_URL=${{ secrets.MONGO_URL }}
           MYSQL_URL=${{ secrets.MYSQL_URL }}
-          MAIL_USERNAME=${{ secrets.MAIL_USERNAME  }}
+          MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}
           EOF
+
       - name: Export test environment variables
         run: |
           echo "WEATHER_API_KEY=${{ secrets.WEATHER_API_KEY }}" >> $GITHUB_ENV
@@ -79,9 +79,33 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT }}
+
           script: |
-            sudo apt-get update
+            set -e
+
+            echo "Updating packages"
+            sudo apt-get update -y
             sudo apt-get install -y docker-compose-plugin
+
+            echo "Switching to project directory"
             cd /srv/hackathon
+
+            echo "Pulling latest image"
             docker compose pull
+
+            echo "Stopping old containers"
+            docker compose down --remove-orphans
+
+            echo "Starting containers"
             docker compose up -d
+
+            echo "Waiting 8 seconds for container to start"
+            sleep 8
+
+            echo "Checking service health"
+            if ! docker ps | grep -q "hackathon-api"; then
+              echo "Deployment failed — container not running"
+              exit 1
+            fi
+
+            echo "Deployment completed successfully"
