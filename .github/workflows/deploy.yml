@@ -82,6 +82,11 @@ jobs:
           script: |
             set -e
 
+            whoami
+            id
+            pwd
+            ls -la /home
+
             echo "Updating system packages"
             sudo apt-get update -y
             sudo apt-get install -y docker-compose-plugin
