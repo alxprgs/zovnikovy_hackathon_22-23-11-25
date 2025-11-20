@@ -51,6 +51,7 @@ jobs:
     needs: tests
     runs-on: ubuntu-latest
     if: github.actor == 'alxprgs'
+    environment: deploy
 
     steps:
       - name: Checkout
