@@ -17,7 +17,7 @@ class WeatherTestSchema(BaseModel):
 
 
 @router.post("/dev/test_weather")
-async def test_weather(request: Request, data: WeatherTestSchema):
+async def dev_test_weather(request: Request, data: WeatherTestSchema):
 
     if not settings.DEV:
         return RedirectResponse(
