@@ -27,6 +27,16 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+class VKSettings(BaseSettings):
+    CLIENT_ID: int
+    CLIENT_SECRET: str
+    REDIRECT_URI: str
+
+    model_config = SettingsConfigDict(
+        env_prefix="VK_",
+        env_file=".env",
+        extra="ignore"
+    )
 
 class RootUser(BaseSettings):
     LOGIN: str = Field(..., min_length=3)
@@ -162,8 +172,12 @@ class MySQL(DatabaseConfig):
 
 
 @lru_cache
-def get_root_user_settongs() -> RootUser:
+def get_root_user_settings() -> RootUser:
     return RootUser()
+
+@lru_cache
+def get_vk_settings() -> VKSettings:
+    return VKSettings()
 
 
 @lru_cache
@@ -197,7 +211,8 @@ def get_mysql_settings() -> MySQL:
 
 
 settings: Final = get_settings()
-root_user_settings: Final = get_root_user_settongs()
+vk_settings: Final = get_vk_settings()
+root_user_settings: Final = get_root_user_settings()
 jwt_settings: Final = get_jwt_settings()
 mail_settings: Final = get_mail_settings()
 postgresql_settings: Final = get_postgresql_settings()

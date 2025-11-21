@@ -102,6 +102,9 @@ from server.routes.user import(
     registration,
     update
 )
+from server.routes.dev import(
+    dev_panel,
+)
 
 for router in (
     health.router,
@@ -113,5 +116,6 @@ for router in (
     logout.router,
     registration.router,
     update.router,
+    dev_panel.router,
 ):
     app.include_router(router)
