@@ -89,9 +89,9 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.state.templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 from server.routes import (
+    dev_test_mail,
+    dev_test_weather,
     health,
-    test_mail,
-    test_weather,
     )
 
 from server.routes.user import(
@@ -105,8 +105,8 @@ from server.routes.user import(
 
 for router in (
     health.router,
-    test_mail.router,
-    test_weather.router,
+    dev_test_mail.router,
+    dev_test_weather.router,
     authorization.router,
     create.router,
     delete.router,
