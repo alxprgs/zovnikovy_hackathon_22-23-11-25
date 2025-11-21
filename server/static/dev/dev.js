@@ -81,6 +81,8 @@ const endpoints = [
         fields: [
             { name: "code", label: "code", type: "text", placeholder: "полученный от VK" },
             { name: "device_id", label: "device_id", type: "text", placeholder: "полученный от VK" },
+            { name: "state", label: "state", type: "text", placeholder: "state из SDK" },
+            { name: "code_verifier", label: "code_verifier", type: "text", placeholder: "PKCE verifier" },
         ],
     },
     {
@@ -223,13 +225,12 @@ async function sendRequest(ep, formData) {
     const duration = performance.now() - started;
 
     let bodyText;
-    let parsed;
 
     const contentType = res.headers.get("content-type") || "";
 
     try {
         if (contentType.includes("application/json")) {
-            parsed = await res.json();
+            const parsed = await res.json();
             bodyText = JSON.stringify(parsed, null, 2);
         } else {
             bodyText = await res.text();
@@ -293,14 +294,57 @@ function initDevPanel() {
     });
 }
 
-function initVKAuthWidget() {
+
+function base64urlEncode(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    let str = "";
+    for (const b of bytes) str += String.fromCharCode(b);
+    return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function randomUrlSafeString(length = 64) {
+    const bytes = new Uint8Array(length);
+    crypto.getRandomValues(bytes);
+    return base64urlEncode(bytes.buffer);
+}
+
+async function sha256(plain) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(plain);
+    return crypto.subtle.digest("SHA-256", data);
+}
+
+async function generatePkcePair() {
+    const verifier = randomUrlSafeString(64);
+    const hashed = await sha256(verifier);
+    const challenge = base64urlEncode(hashed);
+    const state = crypto.randomUUID();
+    return { verifier, challenge, state };
+}
+
+async function ensurePkce() {
+    const v = sessionStorage.getItem("vk_code_verifier");
+    const c = sessionStorage.getItem("vk_code_challenge");
+    const s = sessionStorage.getItem("vk_state");
+    if (v && c && s) {
+        return { verifier: v, challenge: c, state: s };
+    }
+    const pkce = await generatePkcePair();
+    sessionStorage.setItem("vk_code_verifier", pkce.verifier);
+    sessionStorage.setItem("vk_code_challenge", pkce.challenge);
+    sessionStorage.setItem("vk_state", pkce.state);
+
+    document.cookie = `vk_state=${encodeURIComponent(pkce.state)}; path=/; max-age=600; samesite=lax`;
+
+    return pkce;
+}
+
+async function initVKAuthWidget() {
     const statusEl = document.getElementById("vkid-status");
     const container = document.getElementById("vkid-one-tap");
     const cfg = window.VK_DEV_CONFIG || null;
 
-    if (!container || !cfg) {
-        return;
-    }
+    if (!container || !cfg) return;
 
     if (!("VKIDSDK" in window)) {
         if (statusEl) statusEl.textContent = "VKID SDK не загрузился";
@@ -310,12 +354,20 @@ function initVKAuthWidget() {
     const VKID = window.VKIDSDK;
 
     try {
+        const pkce = await ensurePkce();
+
         VKID.Config.init({
             app: cfg.clientId,
             redirectUrl: cfg.redirectUrl,
+
+            codeChallenge: pkce.challenge,
+
+            state: pkce.state,
+
             responseMode: VKID.ConfigResponseMode.Callback,
             source: VKID.ConfigSource.LOWCODE,
-            scope: "", // при необходимости добавишь
+
+            scope: "vkid.personal_info email",
         });
 
         const oneTap = new VKID.OneTap();
@@ -337,11 +389,16 @@ function initVKAuthWidget() {
                 const code = payload.code;
                 const deviceId = payload.device_id;
 
+                const verifier = sessionStorage.getItem("vk_code_verifier");
+                const state = sessionStorage.getItem("vk_state");
+
                 if (statusEl) statusEl.textContent = "VK ID: код получен, авторизация...";
 
-                const url = `/user/auth/vk/callback?code=${encodeURIComponent(
-                    code
-                )}&device_id=${encodeURIComponent(deviceId)}`;
+                const url =
+                    `/user/auth/vk/callback?code=${encodeURIComponent(code)}` +
+                    `&device_id=${encodeURIComponent(deviceId)}` +
+                    (state ? `&state=${encodeURIComponent(state)}` : "") +
+                    (verifier ? `&code_verifier=${encodeURIComponent(verifier)}` : "");
 
                 fetch(url, {
                     method: "GET",
@@ -355,18 +412,13 @@ function initVKAuthWidget() {
                             const json = JSON.parse(text);
                             body = JSON.stringify(json, null, 2);
                         } catch (_) {
-                            // не JSON — оставляем как есть
                         }
 
                         const respBody = document.getElementById("dev-response-body");
                         const respMeta = document.getElementById("dev-response-meta");
 
-                        if (respMeta) {
-                            respMeta.textContent = `${res.status} • VK callback`;
-                        }
-                        if (respBody) {
-                            respBody.textContent = body;
-                        }
+                        if (respMeta) respMeta.textContent = `${res.status} • VK callback`;
+                        if (respBody) respBody.textContent = body;
 
                         if (res.ok) {
                             if (statusEl) statusEl.textContent = "Успешно авторизован через VK (access_token cookie установлена)";
