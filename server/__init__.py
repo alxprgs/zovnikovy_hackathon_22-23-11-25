@@ -82,10 +82,12 @@ app.state.templates = Jinja2Templates(directory=TEMPLATES_DIR)
 from server.routes import (
     health,
     test_mail,
+    test_weather,
     )
 
 for router in (
     health.router,
-    test_mail.router
+    test_mail.router,
+    test_weather.router,
 ):
     app.include_router(router)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr
 
 from asfeslib.net.mail import MailMessage, MailClient
@@ -17,12 +17,11 @@ class MailTestSchema(BaseModel):
     email: EmailStr
 
 
-@router.post("/dev/test_mail", response_class=JSONResponse)
+@router.post("/dev/test_mail")
 async def dev_test_mail(request: Request, data: MailTestSchema):
     if settings.DEV is not True:
-        return JSONResponse(
-            {"msg": "Брат, у тебя DEV режим не включён"},
-            status_code=status.HTTP_403_FORBIDDEN,
+        return RedirectResponse(
+            url="/", status_code=status.HTTP_307_TEMPORARY_REDIRECT
         )
 
     logger.info(f"MAIL_USERNAME={mail_settings.USERNAME!r}")
