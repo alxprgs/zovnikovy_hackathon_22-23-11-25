@@ -12,16 +12,10 @@ router = APIRouter(prefix="/user/auth/vk", tags=["User"])
 
 @router.get("/callback")
 async def vk_callback(request: Request, response: Response, code: str, device_id: str):
-    """
-    Callback для VK ID (OneTap / OAuth 2.0).
-    Принимает ?code=...&device_id=...
-    Делает обмен кода на токен и данные пользователя.
-    Авторизует юзера в системе.
-    """
 
     async with httpx.AsyncClient() as client:
         token_resp = await client.post(
-            "https://id.vk.com/oauth2/auth",
+            "https://id.vk.com/oauth2/token",
             data={
                 "grant_type": "authorization_code",
                 "client_id": vk_settings.CLIENT_ID,
@@ -42,18 +36,25 @@ async def vk_callback(request: Request, response: Response, code: str, device_id
 
     access_token = token_data.get("access_token")
     user_data = token_data.get("user")
+    id_token = token_data.get("id_token")
 
-    if not access_token or not user_data:
+    if not access_token:
+        raise HTTPException(401, "VK did not return access_token")
+
+    if not user_data and id_token:
+        import jwt as pyjwt
+        unverified = pyjwt.decode(id_token, options={"verify_signature": False})
+        vk_uid = unverified.get("sub")
+        if vk_uid:
+            user_data = {"id": vk_uid}
+
+    if not user_data or "id" not in user_data:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid VK response",
+            401,
+            f"VK did not return user info: {token_data}",
         )
 
     vk_user_id = str(user_data["id"])
-    first_name = user_data.get("first_name", "")
-    last_name = user_data.get("last_name", "")
-    email = user_data.get("email")
-
     db = request.app.state.mongo_db
 
     user = await db["users"].find_one({"vk_id": vk_user_id})
@@ -62,8 +63,8 @@ async def vk_callback(request: Request, response: Response, code: str, device_id
         user_doc = {
             "vk_id": vk_user_id,
             "login": f"vk_{vk_user_id}",
-            "email": email,
-            "name": f"{first_name} {last_name}".strip(),
+            "email": token_data.get("email"),
+            "name": f"{user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip(),
             "permissions": {"user": True},
         }
         result = await db["users"].insert_one(user_doc)

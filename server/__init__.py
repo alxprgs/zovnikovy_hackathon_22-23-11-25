@@ -105,6 +105,7 @@ from server.routes.user import(
 )
 from server.routes.dev import(
     dev_panel,
+    vk_debug,
 )
 
 for router in (
@@ -119,5 +120,6 @@ for router in (
     update.router,
     dev_panel.router,
     vk_auth.router,
+    vk_debug.router,
 ):
     app.include_router(router)
