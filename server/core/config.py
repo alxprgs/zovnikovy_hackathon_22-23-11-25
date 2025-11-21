@@ -29,18 +29,16 @@ class Settings(BaseSettings):
 
 
 class MailSettings(BaseSettings):
-    MAIL_USERNAME: EmailStr | None = None
-    MAIL_FROM: EmailStr | None = None
+    USERNAME: EmailStr | None = None
+    FROM: EmailStr | None = None
 
-    MAIL_PORT_IMAP: int = Field(993, ge=1, le=65535)
-    MAIL_PORT_SMTP: int = Field(465, ge=1, le=65535)
-    MAIL_PORT_BASE: int = Field(465, ge=1, le=65535)
+    PORT_IMAP: int = Field(993)
+    PORT_SMTP: int = Field(465)
+    SERVER_IMAP: str | None = None
+    SERVER_SMTP: str | None = None
 
-    MAIL_SERVER_IMAP: str | None = None
-    MAIL_SERVER_SMTP: str | None = None
-
-    MAIL_SSL: bool = Field(True)
-    MAIL_PASSWORD: str | None = Field(None, min_length=6)
+    SSL: bool = True
+    PASSWORD: str | None = Field(None, min_length=6)
 
     model_config = SettingsConfigDict(
         env_prefix="MAIL_",
@@ -54,19 +52,20 @@ class MailSettings(BaseSettings):
     def fill_defaults(self):
         base_domain = get_settings().DOMAIN_WITHOUT_WWW
 
-        if not self.MAIL_USERNAME:
-            self.MAIL_USERNAME = f"noreply@{base_domain}"
+        if not self.USERNAME:
+            self.USERNAME = f"noreply@{base_domain}"
 
-        if not self.MAIL_FROM:
-            self.MAIL_FROM = f"noreply@{base_domain}"
+        if not self.FROM:
+            self.FROM = self.USERNAME
 
-        if not self.MAIL_SERVER_IMAP:
-            self.MAIL_SERVER_IMAP = f"mail.{base_domain}"
+        if not self.SERVER_IMAP:
+            self.SERVER_IMAP = f"mail.{base_domain}"
 
-        if not self.MAIL_SERVER_SMTP:
-            self.MAIL_SERVER_SMTP = f"mail.{base_domain}"
+        if not self.SERVER_SMTP:
+            self.SERVER_SMTP = f"mail.{base_domain}"
 
         return self
+
 
 
 class DatabaseConfig(BaseSettings):

@@ -17,10 +17,10 @@ Weather = WeatherApiClient(api_key=settings.WEATHER_API_KEY, lang="ru")
 
 def create_mail_config() -> MailConfig:
     return MailConfig(
-        host=mail_settings.MAIL_SERVER_SMTP,
-        port=mail_settings.MAIL_PORT_SMTP,
-        username=mail_settings.MAIL_USERNAME or "noreply@asfes.ru",
-        password=mail_settings.MAIL_PASSWORD or "testpass123",
+        host=mail_settings.SERVER_SMTP,
+        port=mail_settings.PORT_SMTP,
+        username=mail_settings.USERNAME or "noreply@asfes.ru",
+        password=mail_settings.PASSWORD or "testpass123",
         from_name="ASFES Mailer",
         retry_count=3,
         retry_delay=1.0,
@@ -79,6 +79,13 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.state.templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-from server.routes import health
+from server.routes import (
+    health,
+    test_mail,
+    )
 
-app.include_router(health.router)
+for router in (
+    health.router,
+    test_mail.router
+):
+    app.include_router(router)
