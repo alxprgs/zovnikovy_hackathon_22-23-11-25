@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Optional, Final
 from functools import lru_cache
 
 from pydantic import Field, AnyUrl, EmailStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     DEV: bool = Field(True)
@@ -16,11 +16,38 @@ class Settings(BaseSettings):
     PORT: int = Field(9105)
     RELOAD: int = Field(0)
 
-    VERSION: str = Field("0.0.1")
+    VERSION: str = Field("0.1.0")
 
     WEATHER_API_KEY: str = Field(...)
 
     model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+
+class RootUser(BaseSettings):
+    LOGIN: str = Field(..., min_length=3)
+    PASSWORD: str = Field(..., min_length=8)
+
+    model_config = SettingsConfigDict(
+        env_prefix="ROOT_USER_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+
+class JWTSettings(BaseSettings):
+    SECRET_KEY: str = Field(...)
+    ALGORITHM: str = Field("HS256")
+    TOKEN_EXPIRE_SEC: int = Field(60 * 60)
+
+    model_config = SettingsConfigDict(
+        env_prefix="JWT_",
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
@@ -67,7 +94,6 @@ class MailSettings(BaseSettings):
         return self
 
 
-
 class DatabaseConfig(BaseSettings):
     URL: Optional[AnyUrl] = None
 
@@ -107,6 +133,7 @@ class DatabaseConfig(BaseSettings):
 
         return self
 
+
 class MongoDB(DatabaseConfig):
     SCHEME: str = "mongodb"
     model_config = SettingsConfigDict(
@@ -132,6 +159,17 @@ class MySQL(DatabaseConfig):
         env_file=".env",
         extra="ignore"
     )
+
+
+@lru_cache
+def get_root_user_settongs() -> RootUser:
+    return RootUser()
+
+
+@lru_cache
+def get_jwt_settings() -> JWTSettings:
+    return JWTSettings()
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -159,6 +197,8 @@ def get_mysql_settings() -> MySQL:
 
 
 settings: Final = get_settings()
+root_user_settings: Final = get_root_user_settongs()
+jwt_settings: Final = get_jwt_settings()
 mail_settings: Final = get_mail_settings()
 postgresql_settings: Final = get_postgresql_settings()
 mongodb_settings: Final = get_mongodb_settings()

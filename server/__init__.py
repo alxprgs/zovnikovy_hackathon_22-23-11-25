@@ -11,6 +11,7 @@ from server.core.paths import STATIC_DIR, TEMPLATES_DIR
 from asfeslib.net.mail import MailConfig
 from asfeslib.databases.MongoDB import connect_mongo, MongoConnectScheme
 from asfeslib.weather.client import WeatherApiClient
+from server.core.inti_root_user import init_root_user
 
 MongoDB = MongoConnectScheme(db_url=mongodb_settings.URL)
 Weather = WeatherApiClient(api_key=settings.WEATHER_API_KEY, lang="ru")
@@ -38,6 +39,8 @@ async def lifespan(app: FastAPI):
     app.state.mongo_db = db
     app.state.mongo_status = status
 
+    await init_root_user(log=settings.DEV)
+
     if not status:
         print("MongoDB connection failed")
 
@@ -59,20 +62,26 @@ app = FastAPI(
     openapi_url="/api/v1/openapi.json" if settings.DEV else None,
 )
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
+class SecurityHeadersMiddleware:
+    async def __call__(self, scope, receive, send):
 
-        if request.headers.get("X-Forwarded-Proto", "") == "https":
-            response.headers.setdefault(
-                "Strict-Transport-Security",
-                "max-age=15552000; includeSubDomains"
-            )
-        response.headers.setdefault("X-Content-Type-Options", "nosniff")
-        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-        response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-        response.headers.setdefault("X-Frame-Options", "DENY")
-        return response
+        async def send_wrapper(message):
+            if message["type"] == "http.response.start":
+                headers = dict(message.get("headers", []))
+
+                headers[b"x-content-type-options"] = b"nosniff"
+                headers[b"referrer-policy"] = b"strict-origin-when-cross-origin"
+                headers[b"x-frame-options"] = b"DENY"
+                headers[b"permissions-policy"] = b"geolocation=(), microphone=(), camera=()"
+
+                message["headers"] = list(headers.items())
+
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+    def __init__(self, app):
+        self.app = app
 
 app.add_middleware(SecurityHeadersMiddleware)
 
@@ -85,9 +94,24 @@ from server.routes import (
     test_weather,
     )
 
+from server.routes.user import(
+    authorization,
+    create,
+    delete,
+    logout,
+    registration,
+    update
+)
+
 for router in (
     health.router,
     test_mail.router,
     test_weather.router,
+    authorization.router,
+    create.router,
+    delete.router,
+    logout.router,
+    registration.router,
+    update.router,
 ):
     app.include_router(router)

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from asfeslib.core.logger import Logger
 from server.core.config import settings
+from server.core.ratelimit_simple import rate_limit
 
 logger = Logger(__name__)
 
@@ -13,9 +14,9 @@ router = APIRouter(tags=["dev"])
 
 
 class WeatherTestSchema(BaseModel):
-    city: str = Field(..., min_length=1)
+    city: str = Field(..., min_length=1, max_length=50, pattern=r"^[A-Za-zА-Яа-яёЁ -]+$")
 
-
+@rate_limit(limit=5, period=60)
 @router.post("/dev/test_weather")
 async def dev_test_weather(request: Request, data: WeatherTestSchema):
 
@@ -25,7 +26,12 @@ async def dev_test_weather(request: Request, data: WeatherTestSchema):
             status_code=status.HTTP_307_TEMPORARY_REDIRECT
         )
 
-    client = request.app.state.weatherclient
+    client = getattr(request.app.state, "weatherclient", None)
+    if client is None:
+        return JSONResponse(
+            {"status": False, "msg": "Клиент куда-то потерялся жи ессе"},
+            status_code=500
+        )
 
     try:
         resp = await client.current(data.city)
