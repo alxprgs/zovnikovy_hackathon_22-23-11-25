@@ -4,6 +4,7 @@ from fastapi import APIRouter, Request, Depends, status
 from server.core.functions.permissions import require_permission
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from fastapi.responses import JSONResponse
+from pymongo import ReturnDocument
 
 router = APIRouter(prefix="/warehouse", tags=["warehouse"])
 
@@ -16,18 +17,27 @@ async def warehouse_add(
 ):
     db: AsyncIOMotorDatabase = request.app.state.mongo_db
 
-    warehouse = current_user.get("warehouse_data", None)
-    if warehouse:
-        company = warehouse.get("company", None)
-        warehouse_ids = warehouse.get("warehouse_ids", {})
-    else:
-        return JSONResponse({"status": False, "msg": "Отсутсвует warehouse_data."}, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    warehouse = current_user.get("warehouse_data")
+    if not warehouse:
+        return JSONResponse(
+            {"status": False, "msg": "Отсутствует warehouse_data."},
+            status_code=status.HTTP_403_FORBIDDEN
+        )
+
+    company = warehouse.get("company")
+    warehouse_ids = warehouse.get("warehouse_ids", [])
 
     if company != data.company:
-        return JSONResponse({"status": False, "msg": "У вас нет доступа к этой компании."}, status_code=status.HTTP_400_BAD_REQUEST)
+        return JSONResponse(
+            {"status": False, "msg": "У вас нет доступа к этой компании."},
+            status_code=status.HTTP_403_FORBIDDEN
+        )
 
     if data.warehouse_id not in warehouse_ids:
-        return JSONResponse({"status": False, "msg": "У вас нет доступа к этому складу."}, status_code=status.HTTP_400_BAD_REQUEST)
+        return JSONResponse(
+            {"status": False, "msg": "У вас нет доступа к этому складу."},
+            status_code=status.HTTP_403_FORBIDDEN
+        )
 
     query = {
         "company": data.company,
@@ -41,9 +51,20 @@ async def warehouse_add(
         updated = await db["warehouse"].find_one_and_update(
             query,
             {"$inc": {"count": data.count}},
-            return_document=True
+            return_document=ReturnDocument.AFTER,
         )
-        return JSONResponse({"status": True, "msg": "Количество обновлено", "data": updated}, status_code=status.HTTP_200_OK)
 
-    else:
-        return JSONResponse({"status": False, "msg": "Товар отсутствует в базе данных склада компании. (Добавить его можно через личный кабинет администратора)"}, status_code=status.HTTP_400_BAD_REQUEST)
+        return {
+            "status": True,
+            "msg": "Количество обновлено",
+            "data": updated
+        }
+
+    return JSONResponse(
+        {
+            "status": False,
+            "msg": "Товар отсутствует на складе. "
+                   "(Добавить его можно через личный кабинет администратора)"
+        },
+        status_code=status.HTTP_400_BAD_REQUEST,
+    )

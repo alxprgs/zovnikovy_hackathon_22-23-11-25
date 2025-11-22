@@ -108,6 +108,10 @@ from server.routes.dev import(
     dev_panel,
     vk_debug,
 )
+from server.routes.warehouse import(
+    add_to_sklad,
+    remove_from_sklad,
+)
 
 for router in (
     health.router,
@@ -123,5 +127,7 @@ for router in (
     vk_auth.router,
     vk_debug.router,
     set_post.router,
+    add_to_sklad.router,
+    remove_from_sklad.router,
 ):
     app.include_router(router)
