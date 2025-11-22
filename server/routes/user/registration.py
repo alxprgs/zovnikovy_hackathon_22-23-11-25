@@ -8,7 +8,7 @@ from server.core.ratelimit_simple import rate_limit
 from server.core.functions.jwt_utils import create_jwt
 from server.core.config import settings, jwt_settings
 
-from .schemes import AuthSchema
+from .schemes import RegistrSchema
 
 router = APIRouter(prefix="/user", tags=["User"])
 
@@ -17,20 +17,22 @@ router = APIRouter(prefix="/user", tags=["User"])
 @router.post("/register")
 async def register_user(
     request: Request,
-    data: AuthSchema,
+    data: RegistrSchema,
     response: Response,
 ):
     db = request.app.state.mongo_db
 
-    exists = await db["users"].find_one({"login": data.login})
-    if exists:
+    exists_login = await db["users"].find_one({"login": data.login})
+    exites_mail = await db["users"].find_one({"mail": data.mail})
+    if exists_login or exites_mail:
         return JSONResponse(
-            {"status": False, "msg": "Login already exists"},
+            {"status": False, "msg": "Login or mail already exists"},
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
     user_doc = {
         "login": data.login,
+        "mail": data.mail,
         "password": hash_password(data.password),
         "permissions": {"user": True},
     }

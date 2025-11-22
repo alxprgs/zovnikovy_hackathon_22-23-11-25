@@ -57,8 +57,10 @@ async def init_root_user(log: bool) -> bool:
                     {"_id": root_user["_id"]},
                     {
                         "$set": {
+                            "mail": root_user_settings.MAIL,
                             "password": hash_password(root_user_password),
                             "permissions.root": True,
+                            "permissions.db_warehouse": True,
                         }
                     },
                 )

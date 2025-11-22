@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     PORT: int = Field(9105)
     RELOAD: int = Field(0)
 
-    VERSION: str = Field("0.1.0")
-
+    VERSION: str = Field("0.1.1")
+ 
     WEATHER_API_KEY: str = Field(...)
 
     model_config = SettingsConfigDict(
@@ -41,6 +41,7 @@ class VKSettings(BaseSettings):
 class RootUser(BaseSettings):
     LOGIN: str = Field(..., min_length=3)
     PASSWORD: str = Field(..., min_length=8)
+    MAIL: EmailStr = Field(default="admin@asfes.ru")
 
     model_config = SettingsConfigDict(
         env_prefix="ROOT_USER_",
