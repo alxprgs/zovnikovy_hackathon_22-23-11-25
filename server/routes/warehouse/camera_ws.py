@@ -6,6 +6,7 @@ from server.routes.schemes import CameraAuth, CameraDetectPayload
 
 router = APIRouter(tags=["Camera WS"])
 
+
 @router.websocket("/ws/warehouse/{warehouse_id}/camera")
 async def camera_ws(ws: WebSocket, warehouse_id: str):
     await ws.accept()
@@ -15,8 +16,9 @@ async def camera_ws(ws: WebSocket, warehouse_id: str):
     try:
         auth_msg = await ws.receive_json()
         auth = CameraAuth(**auth_msg)
+
         if auth.warehouse_id != warehouse_id:
-            await ws.send_json({"ok": False, "error": "warehouse_id_mismatch"})
+            await ws.send_json({"ok": False, "error": "Несовпадение warehouse_id."})
             await ws.close()
             return
 
@@ -26,13 +28,13 @@ async def camera_ws(ws: WebSocket, warehouse_id: str):
             "camera_api_key": auth.api_key
         })
         if not wh:
-            await ws.send_json({"ok": False, "error": "auth_failed"})
+            await ws.send_json({"ok": False, "error": "Ошибка авторизации камеры."})
             await ws.close()
             return
 
         company = await db["companies"].find_one({"_id": wh["company_id"], "deleted_at": None})
         if not company or company["name"] != auth.company:
-            await ws.send_json({"ok": False, "error": "company_mismatch"})
+            await ws.send_json({"ok": False, "error": "Компания не совпадает."})
             await ws.close()
             return
 
@@ -62,6 +64,7 @@ async def camera_ws(ws: WebSocket, warehouse_id: str):
                         "deleted_at": None
                     }
                     item_id = (await db["items"].insert_one(item_doc)).inserted_id
+
                     await db["history"].insert_one({
                         "item_id": item_id,
                         "warehouse_id": wh["_id"],
@@ -76,16 +79,19 @@ async def camera_ws(ws: WebSocket, warehouse_id: str):
                 new_count = det.count
 
                 if new_count != old_count:
+                    now = datetime.now(timezone.utc)
+
                     await db["items"].update_one(
                         {"_id": item["_id"]},
-                        {"$set": {"count": new_count, "updated_at": datetime.now(timezone.utc)}}
+                        {"$set": {"count": new_count, "updated_at": now}}
                     )
+
                     await db["history"].insert_one({
                         "item_id": item["_id"],
                         "warehouse_id": wh["_id"],
                         "type": "camera_update",
                         "amount": new_count - old_count,
-                        "ts": datetime.now(timezone.utc),
+                        "ts": now,
                         "by_user_id": None
                     })
 
@@ -108,8 +114,9 @@ async def camera_ws(ws: WebSocket, warehouse_id: str):
 
     except WebSocketDisconnect:
         return
+
     except Exception as e:
         try:
-            await ws.send_json({"ok": False, "error": str(e)})
+            await ws.send_json({"ok": False, "error": f"Ошибка: {str(e)}"})
         finally:
             await ws.close()

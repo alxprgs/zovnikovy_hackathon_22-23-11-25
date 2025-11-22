@@ -1,25 +1,24 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.templating import Jinja2Templates
 
 from server.core.config import settings, mail_settings, mongodb_settings
-from server.core.paths import STATIC_DIR, TEMPLATES_DIR
+from server.core.paths import STATIC_DIR, TEMPLATES_DIR, LOG_DIR
 from asfeslib.net.mail import MailConfig
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from asfeslib.databases.MongoDB import connect_mongo, MongoConnectScheme
 from asfeslib.weather.client import WeatherApiClient
 from server.core.inti_root_user import init_root_user
 
 import logging
 from asfeslib.core.logger import Logger
-from server.core.paths import LOG_DIR
 
 MongoDB = MongoConnectScheme(db_url=mongodb_settings.URL)
 Weather = WeatherApiClient(api_key=settings.WEATHER_API_KEY, lang="ru")
+
 
 def create_mail_config() -> MailConfig:
     return MailConfig(
@@ -33,6 +32,7 @@ def create_mail_config() -> MailConfig:
         rate_limit=0.0,
     )
 
+
 LOG_LEVEL = logging.DEBUG if settings.DEV else logging.INFO
 
 log = Logger(
@@ -41,6 +41,7 @@ log = Logger(
     log_file=str(LOG_DIR / "server.log"),
     level=LOG_LEVEL,
 )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -82,9 +83,9 @@ app = FastAPI(
     openapi_url="/api/v1/openapi.json" if settings.DEV else None,
 )
 
+
 class SecurityHeadersMiddleware:
     async def __call__(self, scope, receive, send):
-
         async def send_wrapper(message):
             if message["type"] == "http.response.start":
                 headers = dict(message.get("headers", []))
@@ -103,14 +104,22 @@ class SecurityHeadersMiddleware:
     def __init__(self, app):
         self.app = app
 
+
 app.add_middleware(SecurityHeadersMiddleware)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.state.templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+
 @app.get("/", include_in_schema=False)
 async def root_index():
     return FileResponse(STATIC_DIR / "app" / "index.html")
+
+
+@app.get("/meta", include_in_schema=False)
+async def meta():
+    return JSONResponse({"dev": settings.DEV, "version": settings.VERSION})
+
 
 from server.routes.health import router as health_router
 from server.routes.user.registration import router as registration_router
@@ -122,6 +131,12 @@ from server.routes.warehouse.supplies import router as supplies_router
 from server.routes.warehouse.camera_ws import router as camera_ws_router
 from server.routes.root.companies import router as root_companies_router
 
+from server.routes.dashboard import router as dashboard_router
+from server.routes.notifications import router as notifications_router
+from server.routes.export import router as export_router
+
+from server.routes.dev.test_mail import router as test_mail_route
+
 for r in (
     health_router,
     registration_router,
@@ -132,5 +147,9 @@ for r in (
     supplies_router,
     camera_ws_router,
     root_companies_router,
+    dashboard_router,
+    notifications_router,
+    export_router,
+    test_mail_route,
 ):
     app.include_router(r)

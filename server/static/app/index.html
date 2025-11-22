@@ -29,6 +29,11 @@
 
       <div class="nav-section nav-authed hidden" id="navAuthed">
         <div class="nav-title">Работа</div>
+
+        <button class="nav-item" data-view="dashboard">
+          <span>Дашборд</span>
+        </button>
+
         <button class="nav-item" data-view="warehouses">
           <span>Склады</span>
         </button>
@@ -66,11 +71,24 @@
           <div class="crumb" id="pageCrumb">/user/auth</div>
         </div>
         <div class="topbar-right">
+          <button class="icon-btn bell" id="btnNotifs" title="Уведомления">
+            🔔 <span class="badge" id="notifsCount">0</span>
+          </button>
           <div class="pill" id="devPill">DEV = —</div>
         </div>
       </header>
 
       <section class="content">
+
+        <!-- DASHBOARD -->
+        <div class="view hidden" id="view-dashboard">
+          <div class="grid" id="dashGrid"></div>
+
+          <div class="card" style="margin-top:12px">
+            <div class="card-title">Ближайшие поставки</div>
+            <div id="dashUpcoming"></div>
+          </div>
+        </div>
 
         <div class="view" id="view-auth">
           <div class="card">
@@ -136,9 +154,32 @@
               <select class="select" id="itemsWarehouseSelect"></select>
               <button class="btn" id="btnItemCreate">+ Добавить товар</button>
               <button class="btn btn-ghost" id="btnLowStock">Низкий остаток</button>
+              <button class="btn btn-ghost" id="btnWarehouseHistory">История склада</button>
+              <button class="btn btn-ghost" id="btnItemsExport">Экспорт CSV</button>
             </div>
             <div class="toolbar-right">
               <input class="input input-sm" id="itemsSearch" placeholder="поиск товара..." />
+
+              <select class="select select-sm" id="itemsCategorySelect">
+                <option value="">все категории</option>
+              </select>
+
+              <select class="select select-sm" id="itemsSortSelect">
+                <option value="name">сорт: имя</option>
+                <option value="count">сорт: остаток</option>
+                <option value="category">сорт: категория</option>
+                <option value="updated_at">сорт: обновление</option>
+              </select>
+
+              <select class="select select-sm" id="itemsOrderSelect">
+                <option value="1">↑</option>
+                <option value="-1">↓</option>
+              </select>
+
+              <label class="check-row">
+                <input type="checkbox" id="itemsLowOnly" />
+                low-stock
+              </label>
             </div>
           </div>
 
@@ -150,6 +191,33 @@
             <div class="toolbar-left">
               <select class="select" id="suppliesWarehouseSelect"></select>
               <button class="btn" id="btnSupplyCreate">+ Запланировать поставку</button>
+              <button class="btn btn-ghost" id="btnSuppliesExport">Экспорт CSV</button>
+            </div>
+            <div class="toolbar-right">
+              <select class="select select-sm" id="suppliesStatusSelect">
+                <option value="all">все статусы</option>
+                <option value="waiting">waiting</option>
+                <option value="done">done</option>
+                <option value="canceled">canceled</option>
+              </select>
+
+              <input class="input input-sm" id="suppliesSearch" placeholder="поиск поставки..." />
+
+              <select class="select select-sm" id="suppliesSortSelect">
+                <option value="expected_at">сорт: дата</option>
+                <option value="amount">сорт: кол-во</option>
+                <option value="status">сорт: статус</option>
+              </select>
+
+              <select class="select select-sm" id="suppliesOrderSelect">
+                <option value="1">↑</option>
+                <option value="-1">↓</option>
+              </select>
+
+              <label class="check-row">
+                <input type="checkbox" id="suppliesOverdueOnly" />
+                просроченные
+              </label>
             </div>
           </div>
 

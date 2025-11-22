@@ -1,6 +1,8 @@
 from __future__ import annotations
 from fastapi import APIRouter, Request, HTTPException, status
+from fastapi.responses import JSONResponse
 from datetime import datetime, timezone
+
 from server.routes.schemes import RegisterCEO
 from server.core.functions.hash_utils import hash_password
 from server.core.functions.jwt_utils import create_jwt
@@ -24,15 +26,16 @@ CEO_DEFAULT_PERMS = [
     "camera.create_key",
 ]
 
+
 @router.post("/register/ceo")
 async def register_ceo(request: Request, data: RegisterCEO):
     db = request.app.state.mongo_db
 
     if await db["users"].find_one({"login": data.login}):
-        raise HTTPException(409, "Login already exists")
+        raise HTTPException(409, "Такой логин уже существует.")
 
     if await db["companies"].find_one({"name": data.company_name}):
-        raise HTTPException(409, "Company already exists")
+        raise HTTPException(409, "Компания с таким названием уже существует.")
 
     company = {
         "name": data.company_name,
@@ -61,5 +64,14 @@ async def register_ceo(request: Request, data: RegisterCEO):
 
     await db["companies"].update_one({"_id": company_id}, {"$set": {"ceo_user_id": user_id}})
 
-    token = create_jwt(str(user_id), ceo["permissions"], company_id=str(company_id), is_ceo=True, is_root=False)
-    return {"ok": True, "token": token, "company_id": str(company_id)}
+    token = create_jwt(
+        str(user_id),
+        ceo["permissions"],
+        company_id=str(company_id),
+        is_ceo=True,
+        is_root=False
+    )
+
+    return JSONResponse(
+        {"ok": True, "token": token, "company_id": str(company_id)}
+    )
