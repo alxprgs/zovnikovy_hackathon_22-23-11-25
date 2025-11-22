@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Optional
+from typing import Optional, List, Any, Dict
 
 import jwt
 from fastapi import Request
@@ -9,11 +9,20 @@ from fastapi import Request
 from server.core.config import jwt_settings
 
 
-def create_jwt(user_id: str, permissions: dict) -> str:
+def create_jwt(
+    user_id: str,
+    permissions: List[str],
+    company_id: Optional[str] = None,
+    is_ceo: bool = False,
+    is_root: bool = False,
+) -> str:
     now = int(time.time())
-    payload = {
+    payload: Dict[str, Any] = {
         "sub": user_id,
         "permissions": permissions,
+        "company_id": company_id,
+        "is_ceo": is_ceo,
+        "is_root": is_root,
         "iat": now,
         "exp": now + jwt_settings.TOKEN_EXPIRE_SEC,
     }
@@ -27,9 +36,7 @@ def decode_jwt(token: str) -> Optional[dict]:
             jwt_settings.SECRET_KEY,
             algorithms=[jwt_settings.ALGORITHM],
         )
-    except jwt.ExpiredSignatureError:
-        return None
-    except jwt.InvalidTokenError:
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
 
 

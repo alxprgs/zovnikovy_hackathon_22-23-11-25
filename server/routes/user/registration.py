@@ -1,54 +1,65 @@
 from __future__ import annotations
-
-from fastapi import APIRouter, Request, status, Response
-from fastapi.responses import JSONResponse
-
+from fastapi import APIRouter, Request, HTTPException, status
+from datetime import datetime, timezone
+from server.routes.schemes import RegisterCEO
 from server.core.functions.hash_utils import hash_password
-from server.core.ratelimit_simple import rate_limit
 from server.core.functions.jwt_utils import create_jwt
-from server.core.config import settings, jwt_settings
-
-from .schemes import RegistrSchema
 
 router = APIRouter(prefix="/user", tags=["User"])
 
+CEO_DEFAULT_PERMS = [
+    "company.update",
+    "users.create",
+    "users.update",
+    "warehouses.create",
+    "warehouses.update",
+    "warehouses.delete",
+    "items.create",
+    "items.update",
+    "items.delete",
+    "items.op",
+    "supplies.create",
+    "supplies.update",
+    "supplies.delete",
+    "camera.create_key",
+]
 
-@rate_limit(limit=5, period=60)
-@router.post("/register")
-async def register_user(
-    request: Request,
-    data: RegistrSchema,
-    response: Response,
-):
+@router.post("/register/ceo")
+async def register_ceo(request: Request, data: RegisterCEO):
     db = request.app.state.mongo_db
 
-    exists_login = await db["users"].find_one({"login": data.login})
-    exites_mail = await db["users"].find_one({"mail": data.mail})
-    if exists_login or exites_mail:
-        return JSONResponse(
-            {"status": False, "msg": "Login or mail already exists"},
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
+    if await db["users"].find_one({"login": data.login}):
+        raise HTTPException(409, "Login already exists")
 
-    user_doc = {
-        "login": data.login,
-        "mail": data.mail,
-        "password": hash_password(data.password),
-        "permissions": {"user": True},
+    if await db["companies"].find_one({"name": data.company_name}):
+        raise HTTPException(409, "Company already exists")
+
+    company = {
+        "name": data.company_name,
+        "inn": data.company_inn,
+        "email": str(data.email),
+        "created_at": datetime.now(timezone.utc),
+        "blocked_at": None,
+        "deleted_at": None
     }
+    company_id = (await db["companies"].insert_one(company)).inserted_id
 
-    result = await db["users"].insert_one(user_doc)
+    ceo = {
+        "login": data.login,
+        "password": hash_password(data.password),
+        "email": data.email,
+        "post": "CEO",
+        "permissions": CEO_DEFAULT_PERMS,
+        "is_ceo": True,
+        "is_root": False,
+        "company_id": company_id,
+        "created_at": datetime.now(timezone.utc),
+        "blocked_at": None,
+        "deleted_at": None
+    }
+    user_id = (await db["users"].insert_one(ceo)).inserted_id
 
-    jwt_token = create_jwt(str(result.inserted_id), user_doc["permissions"])
+    await db["companies"].update_one({"_id": company_id}, {"$set": {"ceo_user_id": user_id}})
 
-    response = JSONResponse({"status": True, "msg": "Registration successful"}, status_code=status.HTTP_200_OK,)
-    response.set_cookie(
-        key="access_token",
-        value=jwt_token,
-        httponly=True,
-        secure=not settings.DEV,
-        samesite="lax",
-        max_age=jwt_settings.TOKEN_EXPIRE_SEC,
-    )
-
-    return response
+    token = create_jwt(str(user_id), ceo["permissions"], company_id=str(company_id), is_ceo=True, is_root=False)
+    return {"ok": True, "token": token, "company_id": str(company_id)}
