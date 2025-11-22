@@ -1,91 +1,45 @@
 from __future__ import annotations
+from datetime import datetime
+from server.core.config import root_user_settings
+from server.core.functions.hash_utils import hash_password
+from fastapi import Request
 
-from asfeslib.core.logger import Logger
-from asfeslib.databases.MongoDB import MongoConnectScheme, connect_mongo
-from motor.motor_asyncio import AsyncIOMotorDatabase
+async def init_root_user(log: bool = False):
+    from server import app
+    db = app.state.mongo_db
 
-from server.core.config import mongodb_settings, root_user_settings
-from server.core.functions.hash_utils import verify_password, hash_password
+    await db["users"].create_index([("login", 1)], unique=True)
+    await db["users"].create_index([("company_id", 1)])
+    await db["companies"].create_index([("name", 1)], unique=True)
+    await db["warehouses"].create_index([("company_id", 1)])
+    await db["warehouses"].create_index([("camera_api_key", 1)], unique=True, sparse=True)
+    await db["items"].create_index([("warehouse_id", 1)])
+    await db["items"].create_index([("warehouse_id", 1), ("name", 1)], unique=True)
+    await db["history"].create_index([("item_id", 1), ("ts", -1)])
+    await db["supplies"].create_index([("warehouse_id", 1), ("expected_at", 1)])
 
-logger = Logger(__name__)
+    login = root_user_settings.LOGIN
+    password = root_user_settings.PASSWORD
+    email = root_user_settings.MAIL
 
+    existing = await db["users"].find_one({"login": login, "is_root": True})
+    if existing:
+        return
 
-async def init_root_user(log: bool) -> bool:
-    temp_client = None
+    doc = {
+        "login": login,
+        "password": hash_password(password),
+        "email": email,
+        "post": "root",
+        "permissions": ["*"],
+        "is_root": True,
+        "is_ceo": False,
+        "company_id": None,
+        "created_at": datetime.utcnow(),
+        "blocked_at": None,
+        "deleted_at": None
+    }
 
-    try:
-        from server import app
-        db_from_state = getattr(app.state, "mongo_db", None)
-
-        if db_from_state is None:
-            MongoDB = MongoConnectScheme(db_url=mongodb_settings.URL)
-            client, db, _ = await connect_mongo(MongoDB)
-            db: AsyncIOMotorDatabase
-            temp_client = client
-            if log:
-                logger.info("Подключение к базе данных отдельным клиентом.")
-        else:
-            db = app.state.mongo_db
-            if log:
-                logger.info("База данных получена из app.state.mongo_db.")
-
-        root_user_login = root_user_settings.LOGIN
-        root_user_password = root_user_settings.PASSWORD
-
-        if not root_user_login or not root_user_password:
-            logger.critical(
-                "Отсутствует логин или пароль root юзера в .env, запуск невозможен."
-            )
-            raise RuntimeError("Missing root credentials")
-
-        root_user = await db["users"].find_one({"login": root_user_login})
-
-        if root_user:
-            stored_hash = root_user.get("password")
-            if not stored_hash or not isinstance(stored_hash, str):
-                new_hash = hash_password(root_user_password)
-                await db["users"].update_one(
-                    {"_id": root_user["_id"]},
-                    {"$set": {"password": new_hash, "permissions.root": True}},
-                )
-                if log:
-                    logger.info("Исправлен повреждённый root-юзер.")
-                return True
-
-            if not verify_password(root_user_password, stored_hash):
-                await db["users"].update_one(
-                    {"_id": root_user["_id"]},
-                    {
-                        "$set": {
-                            "mail": root_user_settings.MAIL,
-                            "password": hash_password(root_user_password),
-                            "permissions.root": True,
-                            "permissions.db_warehouse": True,
-                        }
-                    },
-                )
-                if log:
-                    logger.info("Успешно изменён пароль root юзера.")
-                return True
-
-            if log:
-                logger.info("Изменения root юзера не требуются.")
-            return True
-
-        await db["users"].insert_one({
-            "login": root_user_login,
-            "password": hash_password(root_user_password),
-            "permissions": {"root": True},
-        })
-        if log:
-            logger.info("Успешно создан root юзер.")
-        return True
-
-    except Exception as e:
-        if log:
-            logger.error(f"Ошибка создания/обновления root юзера: '{e}'.")
-        return False
-
-    finally:
-        if temp_client:
-            temp_client.close()
+    await db["users"].insert_one(doc)
+    if log:
+        print("[ROOT] Root user created.")

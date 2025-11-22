@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ASFES Warehouse</title>
+  <link rel="stylesheet" href="/static/app/styles.css" />
+</head>
+<body>
+  <div id="app" class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">A</div>
+        <div class="brand-text">
+          <div class="brand-title">ASFES</div>
+          <div class="brand-sub">Warehouse System</div>
+        </div>
+      </div>
+
+      <div class="nav-section" id="navGuest">
+        <div class="nav-title">Пользователь</div>
+        <button class="nav-item" data-view="auth">
+          <span>Авторизация</span>
+        </button>
+        <button class="nav-item" data-view="register">
+          <span>Регистрация CEO</span>
+        </button>
+      </div>
+
+      <div class="nav-section nav-authed hidden" id="navAuthed">
+        <div class="nav-title">Работа</div>
+        <button class="nav-item" data-view="warehouses">
+          <span>Склады</span>
+        </button>
+        <button class="nav-item" data-view="items">
+          <span>Товары</span>
+        </button>
+        <button class="nav-item" data-view="supplies">
+          <span>Поставки</span>
+        </button>
+        <button class="nav-item hidden" id="navEmployees" data-view="employees">
+          <span>Сотрудники</span>
+        </button>
+        <button class="nav-item hidden" id="navRootCompanies" data-view="root-companies">
+          <span>Компании (root)</span>
+        </button>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="user-mini hidden" id="userMini">
+          <div class="user-dot"></div>
+          <div>
+            <div class="user-mini-login" id="miniLogin">—</div>
+            <div class="user-mini-role" id="miniRole">—</div>
+          </div>
+        </div>
+
+        <button class="btn btn-ghost hidden" id="btnLogout">Выйти</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 id="pageTitle">Авторизация</h1>
+          <div class="crumb" id="pageCrumb">/user/auth</div>
+        </div>
+        <div class="topbar-right">
+          <div class="pill" id="devPill">DEV = —</div>
+        </div>
+      </header>
+
+      <section class="content">
+
+        <div class="view" id="view-auth">
+          <div class="card">
+            <div class="card-title">Вход</div>
+            <div class="form">
+              <label class="label">Логин</label>
+              <input class="input" id="loginLogin" placeholder="login" />
+
+              <label class="label">Пароль</label>
+              <input class="input" id="loginPassword" type="password" placeholder="password" />
+
+              <div class="form-actions">
+                <button class="btn" id="btnLogin">Войти</button>
+                <button class="btn btn-ghost" id="btnLoginDemo">demo root</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="view hidden" id="view-register">
+          <div class="card">
+            <div class="card-title">Регистрация CEO</div>
+            <div class="grid-2">
+              <div class="form">
+                <label class="label">Название компании</label>
+                <input class="input" id="regCompanyName" placeholder="ООО 'Ромашка'" />
+                <label class="label">ИНН (опционально)</label>
+                <input class="input" id="regCompanyInn" placeholder="7700000000" />
+              </div>
+
+              <div class="form">
+                <label class="label">Логин CEO</label>
+                <input class="input" id="regLogin" placeholder="ceo_login" />
+                <label class="label">Пароль</label>
+                <input class="input" id="regPassword" type="password" placeholder="минимум 8 символов" />
+                <label class="label">Email</label>
+                <input class="input" id="regEmail" placeholder="ceo@company.ru" />
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button class="btn" id="btnRegisterCEO">Зарегистрироваться</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="view hidden" id="view-warehouses">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <button class="btn" id="btnWarehouseCreate">+ Создать склад</button>
+            </div>
+            <div class="toolbar-right">
+              <input class="input input-sm" id="warehouseSearch" placeholder="поиск склада..." />
+            </div>
+          </div>
+
+          <div class="grid" id="warehousesGrid"></div>
+        </div>
+
+        <div class="view hidden" id="view-items">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <select class="select" id="itemsWarehouseSelect"></select>
+              <button class="btn" id="btnItemCreate">+ Добавить товар</button>
+              <button class="btn btn-ghost" id="btnLowStock">Низкий остаток</button>
+            </div>
+            <div class="toolbar-right">
+              <input class="input input-sm" id="itemsSearch" placeholder="поиск товара..." />
+            </div>
+          </div>
+
+          <div class="grid" id="itemsGrid"></div>
+        </div>
+
+        <div class="view hidden" id="view-supplies">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <select class="select" id="suppliesWarehouseSelect"></select>
+              <button class="btn" id="btnSupplyCreate">+ Запланировать поставку</button>
+            </div>
+          </div>
+
+          <div class="grid" id="suppliesGrid"></div>
+        </div>
+
+        <div class="view hidden" id="view-employees">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <button class="btn" id="btnEmployeeCreate">+ Создать сотрудника</button>
+            </div>
+          </div>
+
+          <div class="grid" id="employeesGrid"></div>
+        </div>
+
+        <div class="view hidden" id="view-root-companies">
+          <div class="toolbar">
+            <div class="toolbar-left">
+              <button class="btn" id="btnRootRefresh">Обновить</button>
+            </div>
+          </div>
+
+          <div class="grid" id="rootCompaniesGrid"></div>
+        </div>
+
+      </section>
+    </main>
+  </div>
+
+  <div class="modal hidden" id="modal">
+    <div class="modal-backdrop" id="modalBackdrop"></div>
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle">Modal</div>
+        <button class="icon-btn" id="modalClose">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-footer" id="modalFooter"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/static/app/app.js"></script>
+</body>
+</html>

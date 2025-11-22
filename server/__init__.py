@@ -9,9 +9,14 @@ from fastapi.templating import Jinja2Templates
 from server.core.config import settings, mail_settings, mongodb_settings
 from server.core.paths import STATIC_DIR, TEMPLATES_DIR
 from asfeslib.net.mail import MailConfig
+from fastapi.responses import FileResponse
 from asfeslib.databases.MongoDB import connect_mongo, MongoConnectScheme
 from asfeslib.weather.client import WeatherApiClient
 from server.core.inti_root_user import init_root_user
+
+import logging
+from asfeslib.core.logger import Logger
+from server.core.paths import LOG_DIR
 
 MongoDB = MongoConnectScheme(db_url=mongodb_settings.URL)
 Weather = WeatherApiClient(api_key=settings.WEATHER_API_KEY, lang="ru")
@@ -28,28 +33,43 @@ def create_mail_config() -> MailConfig:
         rate_limit=0.0,
     )
 
+LOG_LEVEL = logging.DEBUG if settings.DEV else logging.INFO
+
+log = Logger(
+    name="hackathon-api",
+    log_to_file=True,
+    log_file=str(LOG_DIR / "server.log"),
+    level=LOG_LEVEL,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.log = log
+    log.info("Starting app... DEV=%s", settings.DEV)
+
     app.state.mailcfg = create_mail_config()
     app.state.weatherclient = Weather
+    log.debug("Mail + Weather clients prepared")
 
     client, db, status = await connect_mongo(MongoDB)
     app.state.mongo_client = client
     app.state.mongo_db = db
     app.state.mongo_status = status
 
-    await init_root_user(log=settings.DEV)
+    if status:
+        log.info("MongoDB connected")
+    else:
+        log.error("MongoDB connection failed")
 
-    if not status:
-        print("MongoDB connection failed")
+    await init_root_user(log=settings.DEV)
 
     yield
 
     try:
         client.close()
-    except:
-        pass
+        log.info("MongoDB client closed")
+    except Exception as e:
+        log.warning("Mongo close error: %s", e)
 
 
 app = FastAPI(
@@ -88,46 +108,29 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.state.templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
-from server.routes import (
-    dev_test_mail,
-    dev_test_weather,
-    health,
-    )
+@app.get("/", include_in_schema=False)
+async def root_index():
+    return FileResponse(STATIC_DIR / "app" / "index.html")
 
-from server.routes.user import(
-    authorization,
-    create,
-    delete,
-    logout,
-    registration,
-    update,
-    vk_auth,
-    set_post,
-)
-from server.routes.dev import(
-    dev_panel,
-    vk_debug,
-)
-from server.routes.warehouse import(
-    add_to_sklad,
-    remove_from_sklad,
-)
+from server.routes.health import router as health_router
+from server.routes.user.registration import router as registration_router
+from server.routes.user.authorization import router as auth_router
+from server.routes.company.users import router as company_users_router
+from server.routes.warehouse.manage import router as warehouse_manage_router
+from server.routes.warehouse.items import router as items_router
+from server.routes.warehouse.supplies import router as supplies_router
+from server.routes.warehouse.camera_ws import router as camera_ws_router
+from server.routes.root.companies import router as root_companies_router
 
-for router in (
-    health.router,
-    dev_test_mail.router,
-    dev_test_weather.router,
-    authorization.router,
-    create.router,
-    delete.router,
-    logout.router,
-    registration.router,
-    update.router,
-    dev_panel.router,
-    vk_auth.router,
-    vk_debug.router,
-    set_post.router,
-    add_to_sklad.router,
-    remove_from_sklad.router,
+for r in (
+    health_router,
+    registration_router,
+    auth_router,
+    company_users_router,
+    warehouse_manage_router,
+    items_router,
+    supplies_router,
+    camera_ws_router,
+    root_companies_router,
 ):
-    app.include_router(router)
+    app.include_router(r)

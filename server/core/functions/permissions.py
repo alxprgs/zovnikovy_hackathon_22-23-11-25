@@ -1,50 +1,45 @@
 from __future__ import annotations
 
-from fastapi import Request, HTTPException, status
-from .jwt_utils import get_jwt_from_request, decode_jwt
+from fastapi import Depends, HTTPException, Request
+from server.core.functions.jwt_utils import decode_jwt
+from server.core.db_utils import oid
 
 
-async def get_current_user(request: Request) -> dict:
-    token = get_jwt_from_request(request)
-    if not token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-
-    payload = decode_jwt(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
-
-    if "sub" not in payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload",
-        )
-
-    if "permissions" not in payload or not isinstance(payload["permissions"], dict):
-        payload["permissions"] = {}
-
-    return payload
+def has_perm(user: dict, perm: str) -> bool:
+    if user.get("is_root"):
+        return True
+    perms = set(user.get("permissions", []))
+    return "*" in perms or perm in perms
 
 
-def require_permission(permission_name: str):
-    async def checker(request: Request):
-        user = await get_current_user(request)
-        perms = user.get("permissions", {})
+def require_permission(perm: str):
+    async def dep(request: Request):
+        token = request.headers.get("authorization")
+        if not token or not token.lower().startswith("bearer "):
+            raise HTTPException(status_code=401, detail="Missing token")
 
-        if perms.get("root"):
-            return user
+        token = token.split(" ", 1)[1].strip()
+        payload = decode_jwt(token)
 
-        if not perms.get(permission_name, False):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Permission denied",
-            )
+        if not payload:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+
+        db = request.app.state.mongo_db
+        user = await db["users"].find_one({"_id": oid(user_id), "deleted_at": None})
+
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+
+        if user.get("blocked_at"):
+            raise HTTPException(status_code=403, detail="User blocked")
+
+        if not has_perm(user, perm):
+            raise HTTPException(status_code=403, detail=f"No permission: {perm}")
 
         return user
 
-    return checker
+    return Depends(dep)
