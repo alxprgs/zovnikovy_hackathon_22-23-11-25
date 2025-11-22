@@ -135,7 +135,7 @@ from server.routes.dashboard import router as dashboard_router
 from server.routes.notifications import router as notifications_router
 from server.routes.export import router as export_router
 
-from server.routes.dev.test_mail import router as test_mail_route
+from server.routes.dev.dev_test_mail import router as test_mail_route
 
 for r in (
     health_router,
