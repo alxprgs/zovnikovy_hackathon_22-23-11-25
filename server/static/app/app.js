@@ -20,20 +20,58 @@ const API = {
     if (t) h["Authorization"] = "Bearer " + t;
     return h;
   },
+
   async req(path, {method="GET", body=null}={}){
     const res = await fetch(API.base + path, {
       method,
       headers: API.headers(),
       body: body ? JSON.stringify(body) : null
     });
+
+    let raw = "";
+    try { raw = await res.text(); } catch(e){}
+
     let data = null;
-    try{ data = await res.json(); } catch(e){}
-    if (!res.ok) {
-      throw new Error(data?.error || data?.detail || `HTTP ${res.status}`);
+    if (raw) {
+      try { data = JSON.parse(raw); }
+      catch { data = raw; }
     }
-    return data ?? {};
+
+    if (!res.ok) {
+      const msg = formatApiError(data) || `HTTP ${res.status}`;
+      throw new Error(msg);
+    }
+
+    return (data && typeof data === "object") ? data : {};
   }
 };
+
+function formatApiError(data){
+  if (!data) return null;
+
+  if (typeof data === "string") return data;
+
+  if (data.error && typeof data.error === "string") return data.error;
+
+  const d = data.detail;
+
+  if (typeof d === "string") return d;
+
+  if (Array.isArray(d)) {
+    return d.map(err => {
+      if (typeof err === "string") return err;
+      const loc = Array.isArray(err.loc) ? err.loc.join(".") : (err.loc ?? "");
+      const msg = err.msg || err.message || "Ошибка валидации";
+      return loc ? `${loc}: ${msg}` : msg;
+    }).join("\n");
+  }
+
+  if (d && typeof d === "object") {
+    return d.msg || d.message || JSON.stringify(d);
+  }
+
+  return data.message || null;
+}
 
 const PERMISSIONS_CATALOG = [
   { group: "Компания", key: "company.update", title: "Управление компанией", desc: "Менять название, ИНН и общие данные компании." },
@@ -92,7 +130,8 @@ const toastEl = $("#toast");
 function toast(msg, type="good"){
   const item = document.createElement("div");
   item.className = `toast-item ${type}`;
-  item.innerHTML = `<div>${msg}</div><button class="icon-btn">✕</button>`;
+  item.innerHTML = `<div class="toast-msg"></div><button class="icon-btn">✕</button>`;
+  item.querySelector(".toast-msg").textContent = msg;
   item.querySelector("button").onclick = () => item.remove();
   toastEl.appendChild(item);
   setTimeout(() => item.remove(), 3500);

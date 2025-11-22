@@ -243,6 +243,11 @@ body{
 .toast-item.good{border-color:rgba(46,204,113,.5)}
 .toast-item.bad{border-color:rgba(255,92,122,.6)}
 
+.toast-msg{
+  white-space: pre-line;
+  word-break: break-word;
+}
+
 @media (max-width: 900px){
   .layout{grid-template-columns: 1fr}
   .sidebar{position:relative; height:auto}
@@ -312,3 +317,15 @@ body{
   background: rgba(255,255,255,0.02);
 }
 .hidden { display: none !important; }
+
+.nav-item[data-view="register"]{
+  background: linear-gradient(180deg, rgba(123,97,255,.28) 0%, rgba(94,72,217,.28) 100%);
+  border-color: rgba(123,97,255,.7);
+  box-shadow: 0 6px 18px rgba(123,97,255,.45);
+  font-weight: 700;
+}
+
+.nav-item[data-view="register"]:hover{
+  background: linear-gradient(180deg, rgba(123,97,255,.38) 0%, rgba(94,72,217,.38) 100%);
+  transform: translateY(-1px);
+}
