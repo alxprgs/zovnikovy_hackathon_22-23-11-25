@@ -1,424 +1,291 @@
-import asyncio
-import json
+from __future__ import annotations
+
 import os
-import threading
 import time
-import urllib.request
-import traceback
-from typing import Optional, Dict, Any
+import threading
+from queue import Queue, Empty
+from typing import Dict, Optional
 
 import cv2
+import httpx
 import torch
-import websockets
-from websockets.exceptions import ConnectionClosed
-
-from yolo_world_onnx import YOLOWORLD
+from ultralytics import YOLO
 
 
-ONNX_MODEL_PATH = "yolov8x-worldv2.onnx"
-ONNX_MODEL_URL = (
-    "https://github.com/Ziad-Algrafi/ODLabel/raw/main/assets/"
-    "yolov8x-worldv2.onnx?download="
-)
+RTSP_URL = "rtsp://Alx_admin:123@10.2.50.154:554/stream1"
 
-if not os.path.exists(ONNX_MODEL_PATH):
-    print("[INFO] YOLO-World ONNX model not found. Downloading...")
-    try:
-        urllib.request.urlretrieve(ONNX_MODEL_URL, ONNX_MODEL_PATH)
-        print("[INFO] Download complete:", ONNX_MODEL_PATH)
-    except Exception as e:
-        print("[ERROR] Failed to download YOLO-World ONNX:", e)
-        raise SystemExit(1)
+SERVER = "https://hackathon.asfes.ru"
+ORG_NAME = "123"
+WAREHOUSE_ID = "6922ae861986302025f83ef1"
+CAMERA_API_KEY = "zF2Cys4-HJxIOHBRavNZGYlnz_JXtSrJ"
+
+ENDPOINT = f"{SERVER.rstrip('/')}/camera"
+
+MODEL_PATH = "yolo12x.pt"
+IMGSZ = 640
+CONF = 0.35
+IOU = 0.5
+
+TARGET_CLASS_NAMES = {
+    "apple": "apple",
+    "bottle": "bottle",
+    "cell phone": "phone",
+}
+
+COLORS = {
+    "apple": (0, 255, 0),
+    "bottle": (255, 0, 0),
+    "cell phone": (0, 200, 255),
+}
+
+SEND_INTERVAL_SEC = 1.0
 
 
-TARGETS = [
-    {
-        "name": "phone",
-        "prompt": "smartphone, mobile phone, cellphone",
-        "color": (0, 255, 0),
-    },
-    {
-        "name": "bottle",
-        "prompt": "bottle, plastic water bottle",
-        "color": (255, 0, 0),
-    },
-]
+class CountsPoster(threading.Thread):
+    def __init__(self, queue: Queue, interval_sec: float, endpoint: str):
+        super().__init__(daemon=True)
+        self.queue = queue
+        self.interval_sec = interval_sec
+        self.endpoint = endpoint
+        self._stop = threading.Event()
+        self._latest_counts: Dict[str, int] = {}
 
-class FrameGrabber:
+    def stop(self):
+        self._stop.set()
 
-    def __init__(self, source: str, reopen_delay: float = 1.0):
-        self.source = source
-        self.reopen_delay = reopen_delay
+    def run(self):
+        with httpx.Client(timeout=5.0) as client:
+            last_send = 0.0
+            while not self._stop.is_set():
+                try:
+                    while True:
+                        self._latest_counts = self.queue.get_nowait()
+                except Empty:
+                    pass
+
+                now = time.time()
+                if now - last_send >= self.interval_sec:
+                    last_send = now
+                    try:
+                        payload = self._build_request(self._latest_counts)
+                        client.post(self.endpoint, json=payload)
+                    except Exception as e:
+                        print("[API ERROR]", repr(e))
+
+                time.sleep(0.05)
+
+    @staticmethod
+    def _build_request(counts: Dict[str, int]) -> Dict:
+        detect_list = []
+        for coco_name, count in counts.items():
+            if count <= 0:
+                continue
+            detect_list.append({"type": coco_name, "count": int(count)})
+
+        return {
+            "auth": {
+                "company": ORG_NAME,
+                "warehouse_id": WAREHOUSE_ID,
+                "api_key": CAMERA_API_KEY,
+            },
+            "payload": {"detect": detect_list},
+        }
+
+
+class RTSPGrabber(threading.Thread):
+    """
+    Постоянно читает RTSP и хранит только последний кадр.
+    Если инференс тормозит — старые кадры не копятся.
+    """
+
+    def __init__(self, url: str):
+        super().__init__(daemon=True)
+        self.url = url
         self.cap: Optional[cv2.VideoCapture] = None
+        self.last_frame: Optional[any] = None
         self.lock = threading.Lock()
-        self.latest_frame = None
-        self.stop_event = threading.Event()
-        self.thread: Optional[threading.Thread] = None
+        self._stop = threading.Event()
+        self.fails = 0
 
-    def _open_capture(self) -> Optional[cv2.VideoCapture]:
-        src = self.source.strip()
-        print(f"[INFO] Opening video source: {src}")
+    def stop(self):
+        self._stop.set()
 
-        if src.isdigit():
-            cap = cv2.VideoCapture(int(src))
-        elif src.startswith("rtsp://"):
-            cap = cv2.VideoCapture(src, cv2.CAP_FFMPEG)
-        else:
-            cap = cv2.VideoCapture(src)
+    def _open(self):
+        os.environ.setdefault(
+            "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+            "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;0"
+        )
 
-        if not cap or not cap.isOpened():
-            print("[ERROR] Cannot open video source")
-            return None
-
-        try:
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        except Exception:
-            pass
-
+        cap = cv2.VideoCapture(self.url, cv2.CAP_FFMPEG)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         return cap
 
-    def start(self):
-        if self.thread is not None:
+    def run(self):
+        self.cap = self._open()
+        if not self.cap.isOpened():
+            print("[RTSP] cannot open stream")
             return
-        self.stop_event.clear()
-        self.thread = threading.Thread(target=self._loop, daemon=True)
-        self.thread.start()
 
-    def _loop(self):
-        while not self.stop_event.is_set():
-            if self.cap is None or not self.cap.isOpened():
-                self.cap = self._open_capture()
-                if self.cap is None:
-                    time.sleep(self.reopen_delay)
-                    continue
+        while not self._stop.is_set():
+            ok = self.cap.grab()
+            if not ok:
+                self.fails += 1
+                if self.fails > 30:
+                    print("[RTSP] reconnecting...")
+                    try:
+                        self.cap.release()
+                    except Exception:
+                        pass
+                    time.sleep(0.5)
+                    self.cap = self._open()
+                    self.fails = 0
+                continue
 
-            ok, frame = self.cap.read()
+            self.fails = 0
+            ok, frame = self.cap.retrieve()
             if not ok or frame is None:
-                print("[WARN] FrameGrabber: read failed, reopening source...")
-                try:
-                    self.cap.release()
-                except Exception:
-                    pass
-                self.cap = None
-                time.sleep(self.reopen_delay)
                 continue
 
             with self.lock:
-                self.latest_frame = frame
+                self.last_frame = frame
 
-        if self.cap is not None:
-            try:
-                self.cap.release()
-            except Exception:
-                pass
-            self.cap = None
-
-    def get_frame(self):
-        with self.lock:
-            if self.latest_frame is None:
-                return None
-            return self.latest_frame.copy()
-
-    def stop(self):
-        self.stop_event.set()
-        if self.thread is not None:
-            self.thread.join(timeout=2.0)
-            if self.thread.is_alive():
-                print("[WARN] FrameGrabber thread didn't stop in time; leaving capture open.")
-                return
-        if self.cap is not None:
-            try:
-                self.cap.release()
-            except Exception:
-                pass
-        self.thread = None
-        self.cap = None
-
-
-async def heartbeat(ws: websockets.WebSocketClientProtocol, interval: float = 10.0):
-    """
-    Отправляем WebSocket ping каждые interval секунд.
-    ping — это control-frame, JSON не трогает.
-    """
-    try:
-        while True:
-            await ws.ping()
-            await asyncio.sleep(interval)
-    except Exception:
-        return
-
-async def ws_receiver(ws: websockets.WebSocketClientProtocol, inbox: asyncio.Queue):
-    try:
-        async for msg in ws:
-            if isinstance(msg, bytes):
-                msg = msg.decode("utf-8", "ignore")
-            try:
-                data = json.loads(msg)
-            except json.JSONDecodeError:
-                data = {"raw": msg}
-
-            if inbox.full():
-                try:
-                    _ = inbox.get_nowait()
-                except asyncio.QueueEmpty:
-                    pass
-            await inbox.put(data)
-    except ConnectionClosed:
-        pass
-    except Exception as e:
-        print("[WARN] ws_receiver error:", e)
-
-
-async def ws_sender(ws: websockets.WebSocketClientProtocol, outbox: asyncio.Queue):
-    try:
-        while True:
-            payload = await outbox.get()
-            await ws.send(json.dumps(payload))
-    except ConnectionClosed:
-        pass
-    except Exception as e:
-        print("[WARN] ws_sender error:", e)
-
-async def camera_client(
-    ws_url: str,
-    source: str,
-    company: str,
-    warehouse_id: str,
-    api_key: str,
-    show: bool = True,
-    send_every: float = 0.5,
-    conf_thres: float = 0.30,
-    iou_thres: float = 0.7,
-    reconnect_min_delay: float = 2.0,
-    reconnect_max_delay: float = 15.0,
-):
-    use_gpu = torch.cuda.is_available()
-    device_str = "0" if use_gpu else "cpu"
-    print(f"[INFO] YOLO-World-ONNX device: {device_str}")
-
-    model = YOLOWORLD(ONNX_MODEL_PATH, device=device_str)
-
-    class_prompts = [t["prompt"] for t in TARGETS]
-    model.set_classes(class_prompts)
-    names = model.names
-
-    print("[INFO] Model initialized with classes:")
-    for idx, name in enumerate(names):
-        print(f"  {idx}: {name}")
-
-    grabber = FrameGrabber(source)
-    grabber.start()
-    last_counts: Dict[str, Optional[int]] = {t["name"]: None for t in TARGETS}
-    last_send_time: Dict[str, float] = {t["name"]: 0.0 for t in TARGETS}
-
-    fps_smooth = 0.0
-    prev_t = time.time()
-
-    delay = reconnect_min_delay
-
-    while True:
         try:
-            print("[INFO] Connecting to WebSocket:", ws_url)
-            async with websockets.connect(
-                ws_url,
-                max_size=10_000_000,
-                ping_interval=None,
-                compression=None, 
-            ) as ws:
-                print("[INFO] WebSocket connected")
+            self.cap.release()
+        except Exception:
+            pass
 
-                # Очереди
-                inbox: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=20)
-                outbox: asyncio.Queue[Dict[str, Any]] = asyncio.Queue(maxsize=20)
+    def get_latest(self):
+        with self.lock:
+            if self.last_frame is None:
+                return None
+            return self.last_frame.copy()
 
-                auth_payload = {
-                    "company": company,
-                    "warehouse_id": warehouse_id,
-                    "api_key": api_key,
-                }
-                await ws.send(json.dumps(auth_payload))
 
-                try:
-                    auth_resp_raw = await asyncio.wait_for(ws.recv(), timeout=5.0)
-                except asyncio.TimeoutError:
-                    print("[ERROR] Auth timeout")
-                    raise RuntimeError("auth timeout")
+def pick_device() -> str:
+    return "cuda" if torch.cuda.is_available() else "cpu"
 
-                if isinstance(auth_resp_raw, bytes):
-                    auth_resp_raw = auth_resp_raw.decode("utf-8", "ignore")
 
-                try:
-                    auth_resp = json.loads(auth_resp_raw)
-                except json.JSONDecodeError:
-                    print("[ERROR] Non-JSON auth response:", auth_resp_raw)
-                    raise RuntimeError("bad auth response")
+def draw_hud(frame, counts_pretty: Dict[str, int], fps: float):
+    cv2.putText(
+        frame, f"FPS: {fps:.1f}",
+        (10, 25), cv2.FONT_HERSHEY_SIMPLEX,
+        0.8, (255, 255, 255), 2, cv2.LINE_AA
+    )
+    y = 55
+    for pretty_name, c in counts_pretty.items():
+        cv2.putText(
+            frame, f"{pretty_name}: {c}",
+            (10, y), cv2.FONT_HERSHEY_SIMPLEX,
+            0.8, (255, 255, 255), 2, cv2.LINE_AA
+        )
+        y += 28
 
-                if not auth_resp.get("ok"):
-                    print("[ERROR] Auth failed from server:", auth_resp)
-                    await asyncio.sleep(5)
+
+def main():
+    device = pick_device()
+    print("[INFO] device:", device)
+
+    if device == "cuda":
+        torch.backends.cudnn.benchmark = True
+
+    model = YOLO(MODEL_PATH).to(device)
+    half = (device == "cuda")
+
+    grabber = RTSPGrabber(RTSP_URL)
+    grabber.start()
+
+    counts_queue: Queue = Queue(maxsize=1)
+    poster = CountsPoster(counts_queue, SEND_INTERVAL_SEC, ENDPOINT)
+    poster.start()
+
+    last_t = time.time()
+    fps_ema = 0.0
+    alpha = 0.1
+
+    MIN_INFER_DT = 0.0
+    last_infer_t = 0.0
+
+    try:
+        while True:
+            frame = grabber.get_latest()
+            if frame is None:
+                time.sleep(0.01)
+                continue
+
+            now = time.time()
+            if MIN_INFER_DT > 0 and (now - last_infer_t) < MIN_INFER_DT:
+                cv2.imshow("ASFES Camera Client (YOLO12x + RTSP + API)", frame)
+                if (cv2.waitKey(1) & 0xFF) in (27, ord("q")):
+                    break
+                continue
+
+            last_infer_t = now
+
+            results = model.predict(
+                source=frame,
+                imgsz=IMGSZ,
+                conf=CONF,
+                iou=IOU,
+                half=half,
+                verbose=False,
+                device=device
+            )
+
+            counts: Dict[str, int] = {k: 0 for k in TARGET_CLASS_NAMES.keys()}
+
+            for r in results:
+                if r.boxes is None:
                     continue
+                boxes = r.boxes.xyxy.cpu().numpy()
+                cls_ids = r.boxes.cls.cpu().numpy().astype(int)
+                confs = r.boxes.conf.cpu().numpy()
 
-                print("[INFO] Auth OK:", auth_resp)
+                for (x1, y1, x2, y2), cls_id, cf in zip(boxes, cls_ids, confs):
+                    coco_name = model.names.get(cls_id, str(cls_id))
+                    if coco_name not in TARGET_CLASS_NAMES:
+                        continue
 
-                hb_task = asyncio.create_task(heartbeat(ws, interval=10.0))
-                recv_task = asyncio.create_task(ws_receiver(ws, inbox))
-                send_task = asyncio.create_task(ws_sender(ws, outbox))
+                    counts[coco_name] += 1
 
-                delay = reconnect_min_delay
+                    color = COLORS.get(coco_name, (0, 255, 255))
+                    cv2.rectangle(frame, (int(x1), int(y1)),
+                                  (int(x2), int(y2)), color, 2)
 
+                    label = f"{TARGET_CLASS_NAMES[coco_name]} {cf:.2f}"
+                    cv2.putText(
+                        frame, label,
+                        (int(x1), int(y1) - 6),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.6, color, 2, cv2.LINE_AA
+                    )
+
+            counts_pretty = {TARGET_CLASS_NAMES[k]: v for k, v in counts.items()}
+
+            new_t = time.time()
+            dt = new_t - last_t
+            last_t = new_t
+            inst_fps = (1.0 / dt) if dt > 1e-6 else 0.0
+            fps_ema = inst_fps if fps_ema == 0.0 else (fps_ema * (1 - alpha) + inst_fps * alpha)
+
+            draw_hud(frame, counts_pretty, fps_ema)
+
+            if counts_queue.full():
                 try:
-                    while True:
-                        frame = grabber.get_frame()
-                        if frame is None:
-                            await asyncio.sleep(0.01)
-                            continue
+                    counts_queue.get_nowait()
+                except Empty:
+                    pass
+            counts_queue.put_nowait(counts)
 
-                        boxes, scores, class_ids = model(
-                            frame,
-                            conf=conf_thres,
-                            imgsz=640,
-                            iou=iou_thres,
-                        )
+            cv2.imshow("ASFES Camera Client (YOLO12x + RTSP + API)", frame)
+            key = cv2.waitKey(1) & 0xFF
+            if key in (27, ord("q")):
+                break
 
-                        draw = frame.copy()
-                        counts = {t["name"]: 0 for t in TARGETS}
-                        H, W = frame.shape[:2]
+    finally:
+        grabber.stop()
+        poster.stop()
+        cv2.destroyAllWindows()
 
-                        for box, score, class_id in zip(boxes, scores, class_ids):
-                            cid = int(class_id)
-                            if not (0 <= cid < len(TARGETS)):
-                                continue
-                            obj = TARGETS[cid]
-                            counts[obj["name"]] += 1
-
-                            x, y, w, h = box
-                            x1 = max(0, min(W - 1, int(x - w / 2)))
-                            y1 = max(0, min(H - 1, int(y - h / 2)))
-                            x2 = max(0, min(W - 1, int(x + w / 2)))
-                            y2 = max(0, min(H - 1, int(y + h / 2)))
-
-                            color = obj["color"]
-                            cv2.rectangle(draw, (x1, y1), (x2, y2), color, 2)
-                            cv2.putText(
-                                draw,
-                                f"{obj['name']} {float(score):.2f}",
-                                (x1, max(0, y1 - 5)),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                0.7,
-                                color,
-                                2,
-                            )
-
-                        now = time.time()
-                        payload_detect = []
-                        for obj in TARGETS:
-                            name = obj["name"]
-                            cnt = counts[name]
-
-                            need_send = (
-                                last_counts[name] is None
-                                or last_counts[name] != cnt
-                                or (
-                                    send_every > 0
-                                    and (now - last_send_time[name] >= send_every)
-                                )
-                            )
-
-                            if need_send:
-                                payload_detect.append({"type": name, "count": cnt})
-                                last_counts[name] = cnt
-                                last_send_time[name] = now
-
-                        if payload_detect:
-                            payload = {"detect": payload_detect}
-                            if outbox.full():
-                                try:
-                                    _ = outbox.get_nowait()
-                                except asyncio.QueueEmpty:
-                                    pass
-                            await outbox.put(payload)
-
-                        while not inbox.empty():
-                            msg = await inbox.get()
-                            if isinstance(msg, dict) and not msg.get("ok", True):
-                                print("[SERVER ERROR]", msg)
-
-                        cur_t = time.time()
-                        fps = 1.0 / max(1e-6, cur_t - prev_t)
-                        prev_t = cur_t
-                        fps_smooth = (
-                            fps_smooth * 0.9 + fps * 0.1 if fps_smooth > 0 else fps
-                        )
-
-                        cv2.putText(
-                            draw,
-                            f"FPS: {fps_smooth:.1f}",
-                            (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            1.0,
-                            (255, 255, 255),
-                            2,
-                        )
-
-                        if show:
-                            cv2.imshow("YOLO-World Camera Client", draw)
-                            if cv2.waitKey(1) & 0xFF in (27, ord("q")):
-                                raise KeyboardInterrupt
-
-                finally:
-                    for t in (hb_task, recv_task, send_task):
-                        t.cancel()
-                    for t in (hb_task, recv_task, send_task):
-                        try:
-                            await t
-                        except asyncio.CancelledError:
-                            pass
-
-        except ConnectionClosed as e:
-            print(f"[WARN] WebSocket disconnected: {e}. Reconnecting in {delay:.1f}s...")
-            await asyncio.sleep(delay)
-            delay = min(reconnect_max_delay, delay * 1.5)
-            continue
-        except KeyboardInterrupt:
-            print("[INFO] KeyboardInterrupt – exiting...")
-            break
-        except Exception as e:
-            print("[ERROR] Exception in main loop:", e)
-            traceback.print_exc()
-            print(f"[INFO] Reconnecting in {delay:.1f}s...")
-            await asyncio.sleep(delay)
-            delay = min(reconnect_max_delay, delay * 1.5)
-            continue
-
-    grabber.stop()
-    cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Safe & fast YOLO-World camera client")
-    parser.add_argument("--url", required=True, help="ws://host/ws/warehouse/<id>/camera")
-    parser.add_argument("--source", required=True, help="0 or rtsp://user:pass@ip/stream")
-    parser.add_argument("--company", required=True)
-    parser.add_argument("--warehouse-id", required=True)
-    parser.add_argument("--api-key", required=True)
-    parser.add_argument("--send-every", type=float, default=0.5, help="min seconds between updates for same item")
-    parser.add_argument("--hide", action="store_true", help="do not show OpenCV window")
-    parser.add_argument("--conf", type=float, default=0.30, help="confidence threshold")
-    parser.add_argument("--iou", type=float, default=0.70, help="IOU threshold")
-
-    args = parser.parse_args()
-
-    asyncio.run(
-        camera_client(
-            ws_url=args.url,
-            source=args.source,
-            company=args.company,
-            warehouse_id=args.warehouse_id,
-            api_key=args.api_key,
-            show=not args.hide,
-            send_every=args.send_every,
-            conf_thres=args.conf,
-            iou_thres=args.iou,
-        )
-    )
+    main()

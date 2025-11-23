@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     PORT: int = Field(9105)
     RELOAD: int = Field(0)
 
-    VERSION: str = Field("0.1.2")
+    VERSION: str = Field("1.0.0")
  
     WEATHER_API_KEY: str = Field(...)
 
