@@ -1,14 +1,15 @@
 from __future__ import annotations
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
 from datetime import datetime, timezone
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from server.core.db_utils import oid
 from server.routes.schemes import CameraAuth, CameraDetectPayload
 
 router = APIRouter(tags=["Camera WS"])
 
-
-@router.websocket("/ws/warehouse/{warehouse_id}/camera")
-async def camera_ws(ws: WebSocket, warehouse_id: str):
+@router.websocket("/ws/camera")
+async def camera_ws(ws: WebSocket):
     await ws.accept()
     app = ws.app
     db = app.state.mongo_db
@@ -17,25 +18,27 @@ async def camera_ws(ws: WebSocket, warehouse_id: str):
         auth_msg = await ws.receive_json()
         auth = CameraAuth(**auth_msg)
 
-        if auth.warehouse_id != warehouse_id:
-            await ws.send_json({"ok": False, "error": "Несовпадение warehouse_id."})
-            await ws.close()
+        try:
+            wh_oid = oid(auth.warehouse_id)
+        except Exception:
+            await ws.send_json({"ok": False, "error": "Некорректный warehouse_id."})
+            await ws.close(code=1008)
             return
 
         wh = await db["warehouses"].find_one({
-            "_id": oid(auth.warehouse_id),
+            "_id": wh_oid,
             "deleted_at": None,
             "camera_api_key": auth.api_key
         })
         if not wh:
             await ws.send_json({"ok": False, "error": "Ошибка авторизации камеры."})
-            await ws.close()
+            await ws.close(code=1008)
             return
 
         company = await db["companies"].find_one({"_id": wh["company_id"], "deleted_at": None})
-        if not company or company["name"] != auth.company:
+        if not company or company.get("name") != auth.company:
             await ws.send_json({"ok": False, "error": "Компания не совпадает."})
-            await ws.close()
+            await ws.close(code=1008)
             return
 
         await ws.send_json({"ok": True, "warehouse": wh["name"]})
@@ -52,6 +55,7 @@ async def camera_ws(ws: WebSocket, warehouse_id: str):
                 })
 
                 if not item:
+                    now = datetime.now(timezone.utc)
                     item_doc = {
                         "warehouse_id": wh["_id"],
                         "name": det.type,
@@ -59,8 +63,8 @@ async def camera_ws(ws: WebSocket, warehouse_id: str):
                         "unit": "шт",
                         "count": det.count,
                         "low_limit": None,
-                        "created_at": datetime.now(timezone.utc),
-                        "updated_at": datetime.now(timezone.utc),
+                        "created_at": now,
+                        "updated_at": now,
                         "deleted_at": None
                     }
                     item_id = (await db["items"].insert_one(item_doc)).inserted_id
@@ -70,7 +74,7 @@ async def camera_ws(ws: WebSocket, warehouse_id: str):
                         "warehouse_id": wh["_id"],
                         "type": "camera_update",
                         "amount": det.count,
-                        "ts": datetime.now(timezone.utc),
+                        "ts": now,
                         "by_user_id": None
                     })
                     continue
