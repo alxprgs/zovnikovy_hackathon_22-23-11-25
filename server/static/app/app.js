@@ -1233,13 +1233,17 @@ async function loadNotificationsCount(showToastOnNew=false){
     const count = notificationsCache.length;
 
     const elCount = $("#notifsCount");
-    if (elCount) elCount.textContent = String(count);
+    if (elCount){
+      elCount.textContent = String(count);
+      elCount.classList.toggle("hidden", count === 0);
+    }
 
     if (showToastOnNew && count > lastNotifCount){
       const diff = count - lastNotifCount;
       toast(`Новых уведомлений: ${diff}`, "good");
     }
     lastNotifCount = count;
+    
   }catch(e){
     $("#notifsCount") && ($("#notifsCount").textContent = "0");
     lastNotifCount = 0;

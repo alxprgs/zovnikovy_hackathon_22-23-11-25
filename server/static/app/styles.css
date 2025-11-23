@@ -230,6 +230,26 @@ body{
   background:transparent; border:1px solid var(--border); color:var(--text);
   width:32px; height:32px; border-radius:8px; cursor:pointer;
 }
+.icon-btn.bell{
+  width: auto; 
+  min-width: 32px; 
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.icon-btn.bell .badge{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  line-height: 1;
+  font-weight: 700;
+}
 
 .toast{
   position:fixed; right:18px; bottom:18px; z-index:60;
