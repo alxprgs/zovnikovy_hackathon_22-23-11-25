@@ -109,7 +109,7 @@ class SecurityHeadersMiddleware:
         self.app = app
 
 
-app.add_middleware(SecurityHeadersMiddleware)
+#app.add_middleware(SecurityHeadersMiddleware)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.state.templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -132,7 +132,7 @@ from server.routes.company.users import router as company_users_router
 from server.routes.warehouse.manage import router as warehouse_manage_router
 from server.routes.warehouse.items import router as items_router
 from server.routes.warehouse.supplies import router as supplies_router
-from server.routes.warehouse.camera_ws import router as camera_ws_router
+from server.routes.warehouse.camera_http import router as camera_http_router
 from server.routes.root.companies import router as root_companies_router
 
 from server.routes.dashboard import router as dashboard_router
@@ -149,7 +149,7 @@ for r in (
     warehouse_manage_router,
     items_router,
     supplies_router,
-    camera_ws_router,
+    camera_http_router,
     root_companies_router,
     dashboard_router,
     notifications_router,
