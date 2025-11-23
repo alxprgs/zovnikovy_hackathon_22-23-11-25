@@ -206,6 +206,8 @@ function setView(name){
   };
   $("#pageTitle") && ($("#pageTitle").textContent = titleMap[name]?.[0] || name);
   $("#pageCrumb") && ($("#pageCrumb").textContent = titleMap[name]?.[1] || "");
+  if (name === "items") startItemsAutoRefresh();
+  else stopItemsAutoRefresh();
 }
 
 $$(".nav-item").forEach(btn=>{
@@ -446,7 +448,30 @@ function fillWarehouseSelects(){
 }
 
 let itemsCache = [];
+let itemsAutoTimer = null;
+let itemsInFlight = false;
 let itemsById = new Map();
+
+function startItemsAutoRefresh(){
+  stopItemsAutoRefresh(); // на всякий случай
+
+  itemsAutoTimer = setInterval(() => {
+    if (!views.items || views.items.classList.contains("hidden")) return;
+
+    if (itemsInFlight) return;
+
+    if (document.hidden) return;
+
+    loadItemsView({ silent: true });
+  }, 2000);
+}
+
+function stopItemsAutoRefresh(){
+  if (itemsAutoTimer){
+    clearInterval(itemsAutoTimer);
+    itemsAutoTimer = null;
+  }
+}
 
 function fillItemsCategorySelect(){
   const sel = $("#itemsCategorySelect");
@@ -458,7 +483,7 @@ function fillItemsCategorySelect(){
   if (cats.includes(cur)) sel.value = cur;
 }
 
-async function loadItemsView(){
+async function loadItemsView({ silent = false } = {}){
   if (!warehousesCache.length){
     await loadWarehouses();
     if (!warehousesCache.length) return;
@@ -481,12 +506,19 @@ async function loadItemsView(){
   if (low_only) qs.set("low_only", "true");
 
   try{
+    itemsInFlight = true;
+
     const data = await API.req(`/items/list/${wid}` + (qs.toString() ? `?${qs}` : ""));
     itemsCache = data.items || [];
     itemsById = new Map(itemsCache.map(i => [i.id, i]));
     fillItemsCategorySelect();
     renderItems(itemsCache);
-  }catch(e){ toast(e.message, "bad"); }
+
+  }catch(e){
+    if (!silent) toast(e.message, "bad");
+  }finally{
+    itemsInFlight = false;
+  }
 }
 
 $("#itemsWarehouseSelect")?.addEventListener("change", loadItemsView);
@@ -1268,5 +1300,6 @@ $("#btnNotifs")?.addEventListener("click", openNotifications);
     setView("auth");
   }
 
+  if (!views.items?.classList.contains("hidden")) startItemsAutoRefresh();
   setInterval(()=>loadNotificationsCount(true), 30000);
 })();
